@@ -10,6 +10,7 @@ from pgportfolio.constants import *
 import sqlite3
 from datetime import datetime
 import logging
+import time
 
 
 class HistoryManager:
@@ -55,6 +56,7 @@ class HistoryManager:
         """
         start = int(start - (start%period))
         end = int(end - (end%period))
+        print(f'[HistoryManager.get_global_panel] select_coins')
         coins = self.select_coins(start=end - self.__volume_forward - self.__volume_average_days * DAY,
                                   end=end-self.__volume_forward)
         self.__coins = coins
@@ -69,11 +71,27 @@ class HistoryManager:
         self.__checkperiod(period)
 
         time_index = pd.to_datetime(list(range(start, end+1, period)),unit='s')
-        panel = pd.Panel(items=features, major_axis=coins, minor_axis=time_index, dtype=np.float32)
+        #panel = pd.Panel(items=features, major_axis=coins, minor_axis=time_index, dtype=np.float32)
+        #print(panel.head())
+        print(f'[HistoryManager.get_global_panel] coins: {coins}')
+        print(f'[HistoryManager.get_global_panel] time_indexJ: {time_index}')
+        print(f'[HistoryManager.get_global_panel] type(time_index): {type(time_index)}')
+        print(f'[HistoryManager.get_global_panel] features: {features}')
+        print('==========================================================')
+
+        idx = pd.MultiIndex.from_product([coins, time_index])
+        panel = pd.DataFrame(columns=features, dtype=np.float32, index=idx)
+        print(f'[HistoryManager.get_global_panel] panel.head')
+        print(panel.head)
+        print(f'[HistoryManager.get_global_panel] panel.dtypes')
+        print(panel.dtypes)
 
         connection = sqlite3.connect(DATABASE_DIR)
+        
         try:
             for row_number, coin in enumerate(coins):
+                start_timeit = time.time()
+                print(f'Processing: {coin}')
                 for feature in features:
                     # NOTE: transform the start date to end date
                     if feature == "close":
@@ -114,8 +132,11 @@ class HistoryManager:
                     serial_data = pd.read_sql_query(sql, con=connection,
                                                     parse_dates=["date_norm"],
                                                     index_col="date_norm")
-                    panel.loc[feature, coin, serial_data.index] = serial_data.squeeze()
+                    panel.loc[(coin, serial_data.index), feature] = serial_data.squeeze().values
                     panel = panel_fillna(panel, "both")
+
+                end_timeit = time.time()
+                print(f'    took: {end_timeit - start_timeit} seconds')
         finally:
             connection.commit()
             connection.close()
